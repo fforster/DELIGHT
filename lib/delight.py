@@ -71,6 +71,10 @@ class Delight(object):
 
         # check existing files
         files = os.listdir(self.downloadfolder)
+
+        if files == []:
+            return False
+        
         filters = []
         matchedfiles = []
         ras = []
@@ -93,17 +97,24 @@ class Delight(object):
         self.df["filename"] = dfpanstamps.filename.to_numpy()[idx]
         self.df.at[self.df.dist > 0.1, "filename"] = ""
 
-    
+        return True
+        
     def download(self, width=2, overwrite=False):
 
         """Download missing data"""
 
-        self.checkmissing()
-        print(f"Downloading {(self.df.dist > 0.1).sum()} missing files.")
+        check = self.checkmissing()
+        if check:
+            print(f"Downloading {(self.df.dist > 0.1).sum()} missing files.")
 
         # download missing files
         for idx, row in self.df.iterrows():
-            if row.dist > 0.1 or overwrite:
+            if "dist" in self.df:
+                if row.dist > 0.1 or overwrite:
+                    command = 'panstamps -f --width=%i --filter=r --downloadFolder=%s stack %s %s' % (width, self.downloadfolder, row.ra, row.dec)
+                    print(command)
+                    os.system(command)
+            else:
                 command = 'panstamps -f --width=%i --filter=r --downloadFolder=%s stack %s %s' % (width, self.downloadfolder, row.ra, row.dec)
                 print(command)
                 os.system(command)
