@@ -1,0 +1,17 @@
+import os, sys
+import pandas as pd
+
+sys.path.append("../lib")
+from TransientSet import *
+
+def __main__():
+
+    # data directory
+    datadir = '../data'
+    df = pd.read_csv(os.path.join(filedir, 'testcoords.csv'))
+
+    ts = TransientSet(datadir, df.ra.values, df.dec.values)
+    
+if __name__ == "__main__":
+
+    sys.exit(main())
