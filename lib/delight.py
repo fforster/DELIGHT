@@ -11,7 +11,7 @@ from astropy.visualization import ZScaleInterval, ImageNormalize, MinMaxInterval
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 
-import fitsio
+#import fitsio
 import sep
 from astropy.wcs import WCS
 from astropy.io import fits
@@ -205,7 +205,8 @@ class Delight(object):
             print(f"WARNING: domask and doobject cannot be true simultaneously.")
             return
         
-        data = fitsio.read(filename)
+        #data = fitsio.read(filename)
+        data = fits.open(filename)[0].data.byteswap().newbyteorder()
         data = np.nan_to_num(data, 0)
         data = data# * 1.0
         
@@ -380,7 +381,8 @@ class Delight(object):
         """get masked data"""
         
         # read data
-        data = fitsio.read(os.path.join(self.downloadfolder, filename))
+        #data = fitsio.read(os.path.join(self.downloadfolder, filename))
+        data = fits.open(os.path.join(self.downloadfolder, filename))[0].data.byteswap().newbyteorder()
         data = np.nan_to_num(data, 0)
         data = data# * 1.0
     
