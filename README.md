@@ -1,6 +1,6 @@
 Francisco Förster et al. 2022
 
-The Deep Learning Identification of Galaxy Hosts in Transients (DELIGHT, Förster et al. 2022) is a library created by the ALeRCE broker to automatically identify host galaxies of transient candidates using multi-resolution images and a convolutional neural network.
+The **Deep Learning Identification of Galaxy Hosts in Transients (DELIGHT, Förster et al. 2022)** is a library created by the ALeRCE broker to automatically identify host galaxies of transient candidates using multi-resolution images and a convolutional neural network.
 
 The library has a class with different subroutines that allows you to get the most likely host coordinates starting from given transient coordinates.
 
