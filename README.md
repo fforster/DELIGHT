@@ -40,8 +40,8 @@ Note that DELIGHT's prediction time is currently dominated by the time to downlo
 --- 
 **DELIGHT's multi-resolution images and prediction vector:**
 
-<img src="https://github.com/fforster/DELIGHT/blob/main/figures/multi-resolution.png" alt="drawing" width="600"/>
+<img src="https://github.com/fforster/DELIGHT/blob/main/figures/multi-resolution.png" alt="drawing" width="800"/>
 
 **DELIGHT's neural network architecture:**
 
-<img src="https://github.com/fforster/DELIGHT/blob/main/figures/delight_architecture.png" alt="drawing" width="600"/>
+<img src="https://github.com/fforster/DELIGHT/blob/main/figures/delight_architecture.png" alt="drawing" width="800"/>
