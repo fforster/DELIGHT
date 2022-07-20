@@ -2,6 +2,9 @@ import os
 import re
 import numpy as np
 import pandas as pd
+
+import warnings
+
 import xarray as xr
 
 import matplotlib.pyplot as plt
@@ -20,12 +23,13 @@ from mpl_toolkits.axes_grid.inset_locator import inset_axes
 from matplotlib import cm
 
 import tensorflow as tf
+import panstamps # not really used here, but if we cannot import it is likely that it is not installed
 
 class Delight(object):
 
     """collection of transient locations and images"""
 
-    def __init__(self, datadir, oids, ras, decs, **kwargs):
+    def __init__(self, datadir, oids, ras, decs):
 
         """Create TransientSet object
 
@@ -39,9 +43,6 @@ class Delight(object):
            vector with right ascensions
         decs : numpy array
            vector with declinations
-        **kwargs : dict, optional arguments
-           'peakmags' : numpy array with peak magnitudes
-           'redshifts' : numpy arrau with redshifts
         """
         
         self.datadir = datadir
@@ -64,11 +65,17 @@ class Delight(object):
         self.pixscale = 0.25
 
             
-    def checkmissing(self):
+    def check_missing(self):
 
         """check missing files to download"""
 
+        """
+        Parameters
+        ----------
+        None
+        """
 
+        
         # check existing files
         files = os.listdir(self.downloadfolder)
 
@@ -95,7 +102,7 @@ class Delight(object):
         idx, d2d, d3d = self.sn_coords.match_to_catalog_sky(self.panstamps_coords)
         self.df["dist"] = np.array([float(dist / u.arcsec) for dist in d2d])
         self.df["filename"] = dfpanstamps.filename.to_numpy()[idx]
-        self.df.at[self.df.dist > 0.1, "filename"] = ""
+        self.df.loc[self.df.dist > 0.1, "filename"] = ""
 
         return True
         
@@ -103,7 +110,16 @@ class Delight(object):
 
         """Download missing data"""
 
-        check = self.checkmissing()
+        """
+        Parameters
+        ----------
+        width : integer
+           the width of the image in arcmin (default 2)
+        overwrite : bool
+           whether to overwrite the images
+        """
+
+        check = self.check_missing()
         if check:
             print(f"Downloading {(self.df.dist > 0.1).sum()} missing files.")
 
@@ -119,16 +135,26 @@ class Delight(object):
                 print(command)
                 os.system(command)
 
-        self.checkmissing()
+        self.check_missing()
 
         
-    def getpixcoords(self):
+    def get_pix_coords(self):
 
         """get WCS information and compute SN pixel coordinates"""
 
+
+        """
+        Parameters
+        ----------
+        None
+        """
+        
         # get wcs
         print("Loading WCS information")
-        self.df["wcs"] = self.df.apply(lambda row: WCS(fits.open(os.path.join(self.downloadfolder, row.filename), output_verify='silent_fix')[0].header), axis=1)        
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            # code that produces a warning
+            self.df["wcs"] = self.df.apply(lambda row: WCS(fits.open(os.path.join(self.downloadfolder, row.filename), output_verify='silent_fix')[0].header), axis=1)        
 
         self.df["sn_coords"] = self.df.apply(lambda row: SkyCoord(row.ra, row.dec, unit='deg'), axis=1)
         self.df["xSN"] = self.df.apply(lambda row: row.wcs.world_to_pixel(row.sn_coords)[0], axis=1)
@@ -136,10 +162,18 @@ class Delight(object):
         self.df["dx"] = 1
         self.df["dy"] = 1
 
+
     def get_objects(self, data):
         
         """get SExtractor objects"""
         
+        """
+        Parameters
+        ----------
+        data : numpy array
+           numpy array with 2D image
+        """
+
         # measure a spatially varying background on the image
         bkg = sep.Background(data, bw=128, bh=128, fw=3, fh=3)
         bkg_image = bkg.back()
@@ -161,11 +195,44 @@ class Delight(object):
 
         """elliptical distances"""
         
+        """
+        Parameters
+        ----------
+        x : float
+           SExtractor source x parameter
+        y : float
+           SExtractor source y parameter
+        cx : float
+           SExtractor source cx parameter
+        cy : float
+           SExtractor source cy parameter
+        cxx : float
+           SExtractor source cxx parameter
+        cxy : float
+           SExtractor source cxy parameter
+        cyy : float
+           SExtractor source cyy parameter
+        """
+
         return cxx * (x - cx)**2 + cxy * (y - cy) * (x - cx) + cyy * (y - cy)**2
 
 
-    def plotdata(self, image, objects=None, ax=None):
+    def plot_data(self, image, objects=None, ax=None):
     
+        """plot one masked image with detected SExatractor objects if available"""
+
+        """
+        Parameters
+        ----------
+        image : numpy array
+           numpy array with 2D image
+        objects : pandas dataframe
+           pandas dataframe with list of SExtractor detected sources (do not plot if None)
+        ax : matplotlib axis
+           axis where to plot (create new figure is None)
+        """
+
+
         # plot background-subtracted image
         if ax is None:
             fig, ax = plt.subplots()
@@ -197,9 +264,30 @@ class Delight(object):
 
 
 
-    def getdata(self, oid, filename, dx=None, dy=None, nlevels=5, domask=False, doobject=False, doplot=False):
+    def get_data(self, oid, filename, dx=None, dy=None, nlevels=5, domask=False, doobject=False, doplot=False):
 
         """get data and convert to multiresolution images"""
+
+        """
+        Parameters
+        ----------
+        oid : String
+           object identifier
+        filename : String
+           filename associated to given oid
+        dx : float 
+           offset vector x component
+        dy : float
+           offset vector y component
+        nlevels : integer
+           number of levels to use in the multi-resolution representation
+        domask : bool
+           whether to apply a median absolute deviation mask
+        doobject : bool
+           whether to apply a SExtractor sources mask
+        doplot : bool
+           whether to plot the data
+        """
 
         if domask and doobject:
             print(f"WARNING: domask and doobject cannot be true simultaneously.")
@@ -263,7 +351,7 @@ class Delight(object):
             ax[0].arrow(data.shape[0]/2, data.shape[0]/2, dx, dy, color='r', width=0.3, head_width=5, length_includes_head=True)
         
             #print("aux")
-            self.plotdata(aux, obj, ax=ax[1])
+            self.plot_data(aux, obj, ax=ax[1])
             ax[0].axis('off')
             ax[1].axis('off')
             ax[1].arrow(data.shape[0]/2, data.shape[0]/2, dx, dy, color='r', width=0.3, head_width=5, length_includes_head=True)
@@ -313,7 +401,7 @@ class Delight(object):
 
                         if (i != 0) or (j != 0):
                             obj = None
-                        self.plotdata(image, obj, ax=ax[exp, idx])
+                        self.plot_data(image, obj, ax=ax[exp, idx])
                         aux = np.rot90(aux)
                         if dx is not None and dy is not None:
                             dxold = dx
@@ -336,11 +424,24 @@ class Delight(object):
 
         """Compute multi-resolution images"""
 
+        """
+        Parameters
+        ----------
+        nlevels : integer
+           number of levels to use in the multi-resolution representation
+        domask : bool
+           whether to apply a median absolute deviation mask
+        doobject : bool
+           whether to apply a SExtractor sources mask
+        doplot : bool
+           whether to plot the data
+        """
+        
         self.nlevels = nlevels
         self.domask = domask
         self.doobject = doobject
 
-        coordsdata = self.df.apply(lambda row: self.getdata(row.name, os.path.join(self.downloadfolder, str(row.filename)), row.dx, row.dy, self.nlevels, self.domask, self.doobject, doplot), axis=1, result_type='expand')
+        coordsdata = self.df.apply(lambda row: self.get_data(row.name, os.path.join(self.downloadfolder, str(row.filename)), row.dx, row.dy, self.nlevels, self.domask, self.doobject, doplot), axis=1, result_type='expand')
 
         if doobject:
             coordsdata.columns = ['data', 'objects', 'mask', 'dx_sex', 'dy_sex']
@@ -358,6 +459,13 @@ class Delight(object):
 
         """save dataframe"""
 
+        """
+        Parameters
+        ----------
+        None
+        """
+
+        
         outputfile = os.path.join(self.datadir, "coords_all_data_nlevels%i_mask%s_objects%s.pkl" % (self.nlevels, self.domask, self.doobject))
 
         print(f"Saving data into {outputfile}")
@@ -369,6 +477,12 @@ class Delight(object):
 
         """save dataframe"""
 
+        """
+        Parameters
+        ----------
+        None
+        """
+        
         coordsfile = os.path.join(self.datadir, "coords_all_data_nlevels%i_mask%s_objects%s.pkl" % (self.nlevels, self.domask, self.doobject))
 
         print(f"Loading data from {coordsfile}")
@@ -376,9 +490,20 @@ class Delight(object):
         self.df = pd.read_pickle(coordsfile)
         
         
-    def getmasked(self, filename, domask, doobject):
+    def get_masked(self, filename, domask, doobject):
 
         """get masked data"""
+
+        """
+        Parameters
+        ----------
+        filename : String
+           filename with associated fits file
+        domask : bool
+           whether to apply a median absolute deviation mask
+        doobject : bool
+           whether to apply a SExtractor sources mask
+        """
         
         # read data
         #data = fitsio.read(os.path.join(self.downloadfolder, filename))
@@ -425,6 +550,13 @@ class Delight(object):
     def plot_host(self, oid):
 
         """plot multi resolution image of host given oid"""
+
+        """
+        Parameters
+        ----------
+        oid : String
+           object identifier
+        """
         
         cmap = cm.get_cmap('viridis_r')
 
@@ -443,6 +575,7 @@ class Delight(object):
         image_masked = np.ma.masked_where((image <= 0), image)
         inset.imshow(image_masked, cmap=cmap, norm=norm, origin='lower', interpolation='nearest')
         nx = ny = image.shape[0]
+        inset.text(nx * 0.01, ny * 0.99, oid, fontsize=30, c='k', va='top')
         inset.scatter(nx/2 - 0.5, nx/2 - 0.5, marker='*', c='white', s=snsize, zorder=1000)
         inset.arrow((nx - 1) / 2, (ny - 1) / 2, dxpred, dypred, color='white', width=3, head_width=9, length_includes_head=True)
         inset.scatter((nx - 1) / 2 + dxpred, (ny - 1) / 2 + dypred, lw=3, marker='o', s=200, color='none', edgecolor='white')
@@ -450,7 +583,7 @@ class Delight(object):
         inset.set_yticks([])
         
         inset = ax.inset_axes([1/3, 1/3, 1/3, 2/3])
-        image = self.getmasked(self.df.loc[oid].filename, self.domask, self.doobject)
+        image = self.get_masked(self.df.loc[oid].filename, self.domask, self.doobject)
         interval = ZScaleInterval(contrast=0.2)
         vmin, vmax = interval.get_limits(image[image>0])
         norm = ImageNormalize(vmin=vmin, vmax=vmax)#, stretch=SqrtStretch())
@@ -480,7 +613,6 @@ class Delight(object):
             else:
                 inset.imshow(image_masked, origin='lower', interpolation='nearest')
     
-    
             inset.arrow((nx - 1) / 2, (ny - 1) / 2, dxpred / 2**i, dypred / 2**i, color='white', width=1, head_width=3, length_includes_head=True)
             inset.scatter((nx - 1) / 2 + dxpred / 2**i, (ny - 1) / 2 + dypred / 2**i, lw=3, marker='o', s=200, color='none', edgecolor='white')#, width=0.2, head_width=0.5, length_includes_head            #inset.arrow(nx / 2, ny / 2, dxpred / 2**i, dypred / 2**i, color='r', width=0.1, head_width=0.2, length_includes_head=True)
             inset.set_xlim(-0.5, nx-0.5)
@@ -507,6 +639,8 @@ class Delight(object):
             inset.imshow(image_masked, cmap=cmap, norm=norm, origin='lower')    
         inset.set_xticks([])
         inset.set_yticks([])
+        inset.text(nx * 0.01, ny * 0.06, "DELIGHT predicted host", c='k', fontsize=20)
+        inset.text(nx * 0.01, ny * 0.01, "(white circle)", c='k', fontsize=20)
         nx = image.shape[0]
         for i in range(4):
             inset.scatter(i * nx + nx/2 - 0.5, nx/2 - 0.5, marker='*', c='white', s=snsize)
@@ -545,7 +679,22 @@ class Delight(object):
         plt.savefig(os.path.join(self.imagefolder, "%s_comp.png" % oid))
         plt.show()
 
-    def plotsize(self, image, objects=None, axis=None, doplot=True):
+    def plot_size(self, image, objects=None, axis=None, doplot=True):
+
+        """plot the host size estimation method images"""
+
+        """
+        Parameters
+        ----------
+        image : numpy array
+           numpy array with 2D image
+        objects : pandas dataframe
+           dataframe with SExtractor detected sources
+        axis : matplotlib axis
+           axis where to plot
+        doplot : bool
+           whether to plot images associated to the method
+        """
         
         # plot background-subtracted image
         if doplot:
@@ -603,7 +752,16 @@ class Delight(object):
     def get_hostsize(self, oid, doplot=False):
 
         """estimate the host size"""
-                     
+
+        """
+        Parameters
+        ----------
+        oid : String
+           object identifier
+        doplot : bool
+           whether to plot the method associated images
+        """
+        
         idx_host = self.df.index.get_loc(oid)
 
         if ("xhost" not in self.df or "yhost" not in self.df) and ("dx_delight" not in self.df or "dy_delight" not in self.df):
@@ -614,7 +772,7 @@ class Delight(object):
         yhost = self.df.loc[oid].ySN + self.df.loc[oid].dy_delight
 
         # recompute multi resolution image without masking
-        unmaskeddata = self.df.loc[[oid]].apply(lambda row: self.getdata(row.name, os.path.join(self.downloadfolder, str(row.filename)), row.dx, row.dy, self.nlevels, False, False, False), axis=1, result_type='expand')
+        unmaskeddata = self.df.loc[[oid]].apply(lambda row: self.get_data(row.name, os.path.join(self.downloadfolder, str(row.filename)), row.dx, row.dy, self.nlevels, False, False, False), axis=1, result_type='expand')
         unmaskeddata.columns = ['data', 'mask']
 
         if doplot:
@@ -649,14 +807,14 @@ class Delight(object):
 
             if doplot:
                 if i == self.nlevels:
-                    objects = self.plotsize(image, objects=objects, axis=ax[self.nlevels-i], doplot=doplot)
+                    objects = self.plot_size(image, objects=objects, axis=ax[self.nlevels-i], doplot=doplot)
                 else:
-                    objects = self.plotsize(unmaskedimage, objects=objects, axis=ax[self.nlevels-i], doplot=doplot)
+                    objects = self.plot_size(unmaskedimage, objects=objects, axis=ax[self.nlevels-i], doplot=doplot)
             else:
                 if i == self.nlevels:
-                    objects = self.plotsize(image, objects=objects, axis=None, doplot=False)
+                    objects = self.plot_size(image, objects=objects, axis=None, doplot=False)
                 else:
-                    objects = self.plotsize(unmaskedimage, objects=objects, axis=None, doplot=False)
+                    objects = self.plot_size(unmaskedimage, objects=objects, axis=None, doplot=False)
 
             if objects is not None:
                 if objects.shape[0] > 0:
@@ -681,9 +839,9 @@ class Delight(object):
             plt.savefig(os.path.join(self.imagefolder, f"{oid}_semimajor.pdf"))
             plt.show()
 
-        self.df.at[oid, "hostsize"] = hostsize * self.pixscale
-        self.df.at[oid, "hostsep"] = hostsep * self.pixscale
-        self.df.at[oid, "mindistsize"] = mindistsize
+        self.df.loc[oid, "hostsize"] = hostsize * self.pixscale
+        self.df.loc[oid, "hostsep"] = hostsep * self.pixscale
+        self.df.loc[oid, "mindistsize"] = mindistsize
 
         if doplot:
             print(f"{oid} predicted host estimated semi-major axis: {self.df.loc[oid]['hostsize']} arcsec")
@@ -694,6 +852,12 @@ class Delight(object):
 
         """preprocess data"""
 
+        """
+        Parameters
+        ----------
+        None
+        """
+        
         self.oids = self.df.index.to_numpy()
         
         # normalize
@@ -718,10 +882,17 @@ class Delight(object):
             print("WARNING", np.shape(self.oids), np.shape(self.X))
         
     
-    def loadmodel(self, modelfolder, modelname):
+    def load_model(self, modelfolder, modelname):
 
         """load tensorflow model"""
 
+        """
+        Parameters
+        ----------
+        data : numpy array
+           numpy array with 2D image
+        """
+        
         self.modelfolder = modelfolder
         self.modelname = modelname
         self.tfmodel = tf.keras.models.load_model(os.path.join(self.modelfolder, self.modelname))
@@ -730,6 +901,14 @@ class Delight(object):
     def derotate(self, y_pred, reg=False):
 
         """derotate output"""
+
+        """
+        Parameters
+        ----------
+        data : numpy array
+           numpy array with 2D image
+        """
+
         
         if not reg:
             return np.dstack([y_pred.reshape((y_pred.shape[0], 8, 2))[:, 0],
@@ -757,6 +936,14 @@ class Delight(object):
 
         """predict positions"""
 
+        """
+        Parameters
+        ----------
+        data : numpy array
+           numpy array with 2D image
+        """
+
+        
         y_pred = self.tfmodel.predict([self.Xpr[:, :, :, i] for i in range(self.Xpr.shape[3])])
 
         y_pred = self.derotate(y_pred)
