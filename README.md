@@ -15,6 +15,7 @@ Note that DELIGHT's prediction time is currently dominated by the time to downlo
 
 *Methods* (most important):
 
+* **init**: class constructor, it requires a list of object identifiers, a list of right ascensions, and a list of declinations
 * **download**: downloads PanSTARRS fits files using the [panstamps](https://panstamps.readthedocs.io/en/master/) servive.
 * **get_pix_coords**: gets the WCS solution in the fits files to move from pixel to celestial coordinates.  
 * **compute_multiresolution**: transform the PanSTARRS images to multi-resolution images
