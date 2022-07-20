@@ -29,7 +29,7 @@ Note that DELIGHT's prediction time is currently dominated by the time to downlo
 * **save**: save the resulting dataframe
 * **load**: load the resulting dataframe
 
-*Dependencies*:
+*Requirements*:
 
 * xarray (`python -m pip install xarray`)
 * astropy (`pip install astropy`)
