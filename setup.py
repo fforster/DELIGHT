@@ -8,7 +8,7 @@ setup(
     author='Francisco Förster',
     author_email='francisco.forster@gmail.com',
     license='GNU GPLv3',
-    packages=['delight'],
+    packages=['lib'],
     install_requires=['astropy',
                       'sep',
                       'xarray',
