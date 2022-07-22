@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_namespace_packages
 
 setup(
     name='delight',
@@ -8,8 +8,16 @@ setup(
     author='Francisco Förster',
     author_email='francisco.forster@gmail.com',
     license='GNU GPLv3',
-    packages=['lib'],
+    packages=find_namespace_packages(include=["delight.*"]),
     install_requires=['astropy',
+                      'sep',
+                      'xarray',
+                      'panstamps',
+                      'matplotlib',
+                      'numpy',
+                      'tensorflow'
+                      ],
+    build_requires=['astropy',
                       'sep',
                       'xarray',
                       'panstamps',
