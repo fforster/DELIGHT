@@ -1,4 +1,4 @@
-from setuptools import setup, find_namespace_packages
+from setuptools import setup, find_packages, find_namespace_packages
 from pathlib import Path
 this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text()
@@ -40,6 +40,6 @@ setup(
         'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
     ],
-    include_package_data=True,
-    package_data={'': ['models/*.h5']}
+    #include_package_data=True,
+    package_data={'': ['*.h5']},
 )
