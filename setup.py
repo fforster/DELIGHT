@@ -5,7 +5,7 @@ long_description = (this_directory / "README.md").read_text()
 
 setup(
     name='astro-delight',
-    version='0.0.3',    
+    version='0.0.5',    
     description='Deep Learning Identification of Galaxy Hosts in Transients, a package to automatically identify host galaxies of transient candidates',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -40,4 +40,6 @@ setup(
         'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
     ],
+    include_package_data=True,
+    package_data={'': ['models/*.h5']}
 )
