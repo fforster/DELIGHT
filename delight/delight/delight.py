@@ -2,6 +2,7 @@ import os
 import re
 import numpy as np
 import pandas as pd
+import pkg_resources
 
 import warnings
 
@@ -899,20 +900,25 @@ class Delight(object):
             print("WARNING", np.shape(self.oids), np.shape(self.X))
         
     
-    def load_model(self, modelfolder, modelname):
+    def load_model(self, modelversion='v1', modelfile=None):
 
         """load tensorflow model"""
 
         """
         Parameters
         ----------
-        data : numpy array
-           numpy array with 2D image
+        modelversion : string
+           optional suffix of tensorflow model, default is v1
+        modelfile : string
+           optional filename, use custom model file, it has priority over the previous modelversion string
         """
-        
-        self.modelfolder = modelfolder
-        self.modelname = modelname
-        self.tfmodel = tf.keras.models.load_model(os.path.join(self.modelfolder, self.modelname))
+
+        if modelfile is None:
+            self.modelfile = pkg_resources.resource_filename(__name__, f'DELIGHT_{modelversion}.h5')
+        else:
+            self.modelfile = modelfile
+
+        self.tfmodel = tf.keras.models.load_model(self.modelfile)
     
 
     def derotate(self, y_pred, reg=False):
