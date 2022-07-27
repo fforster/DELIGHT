@@ -4,7 +4,7 @@
 <img src="https://raw.githubusercontent.com/fforster/DELIGHT/main/figures/Delight.png" alt="drawing" width="200"/>
 </p>
 
-The **Deep Learning Identification of Galaxy Hosts in Transients (DELIGHT, Förster et al. 2022, *in preparation*)** is a library created by the [ALeRCE broker](http://alerce.science) to automatically identify host galaxies of transient candidates using multi-resolution images and a convolutional neural network (you can test it with our [example notebook](https://nbviewer.org/github/fforster/DELIGHT/blob/main/notebook/Delight_example_notebook.ipynb)).
+The **Deep Learning Identification of Galaxy Hosts in Transients (DELIGHT, Förster et al. 2022, *in preparation*)** is a library created by the [ALeRCE broker](http://alerce.science) to automatically identify host galaxies of transient candidates using multi-resolution images and a convolutional neural network (you can test it with our [example notebook](https://nbviewer.org/github/fforster/DELIGHT/blob/main/notebook/Delight_example_notebook.ipynb)). DELIGHT was born as a project proposed for the [La Serena School of Data Science](http://lssds.aura-astronomy.org/winter_school/content/2021-la-serena-school-data-science) in 2021.
 
 You can install it using `pip install astro-delight`, but we recommend cloning this repository and `pip install .` from there.
 
