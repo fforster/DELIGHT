@@ -12,7 +12,7 @@ The library has a class with several methods that allow you to get the most like
 
 Note that DELIGHT's prediction time is currently dominated by the time to download [PanSTARRS](https://outerspace.stsci.edu/display/PANSTARRS/) images using the [panstamps service](https://panstamps.readthedocs.io/en/master/). In the future, we expect that there will be services that directly provide multi-resolution images, which should be more lightweight with no significant loss of information. Once these images are obtained, the processing times are only milliseconds per host.
 
-If you cannot install some of the dependencies, e.g. tensorflow, you can try running DELIGHT directly from Google Colab: https://colab.research.google.com/github/fforster/DELIGHT/blob/main/notebook/Delight_example_notebook.ipynb.
+If you cannot install some of the dependencies, e.g. tensorflow, you can try running DELIGHT directly from Google Colab (test in this [link](https://colab.research.google.com/github/fforster/DELIGHT/blob/main/notebook/Delight_example_notebook.ipynb)).
 
 ---
 
