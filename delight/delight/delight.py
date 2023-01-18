@@ -1,5 +1,6 @@
 import os
 import re
+import subprocess
 import numpy as np
 import pandas as pd
 import pkg_resources
@@ -130,12 +131,15 @@ class Delight(object):
                 if row.dist > 0.1 or overwrite:
                     command = 'panstamps -f --width=%i --filter=r --downloadFolder=%s stack %s %s' % (width, self.downloadfolder, row.ra, row.dec)
                     print(command)
-                    os.system(command)
+                    output = subprocess.check_output(command, shell=True)
+                    if len(output) == 0:
+                        print(f"   WARNING: object {idx} ({row.ra} {row.dec}) cannot be downloaded, probably outside PS1 footprint. Please remove {idx} from your sample.")
             else:
                 command = 'panstamps -f --width=%i --filter=r --downloadFolder=%s stack %s %s' % (width, self.downloadfolder, row.ra, row.dec)
                 print(command)
-                os.system(command)
-
+                output = subprocess.check_output(command, shell=True)
+                if len(output) == 0:
+                    print(f"   WARNING: object {idx} ({row.ra} {row.dec}) cannot be downloaded, probably outside PS1 footprint. Please remove {idx} from the sample.") 
         self.check_missing()
 
         
@@ -298,7 +302,10 @@ class Delight(object):
         data = fits.open(filename)[0].data.byteswap().newbyteorder()
         data = np.nan_to_num(data, 0)
         data = data# * 1.0
-        
+        if (np.sum(data == 0) == data.shape[0] * data.shape[1]):
+            print(f"   WARNING: Fits file {filename} has only zeros. Please remove from your sample.")
+            return None, None, None, None, None
+
         # show the image
         if domask:
             med = np.median(data)
@@ -308,7 +315,8 @@ class Delight(object):
         elif doobject:
             objects, mask = self.get_objects(data)
             if len(objects) == 0:
-                print(filename)
+                print(f"   WARNING: no objects detected in {filename}. Please remove from your sample.")
+                return None, None, None, None, None
             objects = pd.DataFrame(data = objects, columns = ['thresh', 'npix', 'tnpix', 'xmin', 'xmax', 'ymin', 'ymax', 'x', 'y', 'x2', 'y2', 'xy', 'errx2', 'erry2', 'errxy', 'a', 'b', 'theta', \
         'cxx', 'cyy', 'cxy', 'cflux', 'flux', 'cpeak', 'peak', 'xcpeak', 'ycpeak', 'xpeak', 'ypeak', 'flag'])
             objects['cx'] = objects['cy'] = data.shape[0] / 2.
@@ -317,7 +325,7 @@ class Delight(object):
                                                  self.ell_dist(row.x, row.y, row.cx, row.cy, row.cxx, row.cxy, row.cyy), axis=1)
                 objects = objects.sort_values("ndist")
             except:
-                print(filename)
+                print(f"   WARNING: no objects in {filename}. Please remove from your sample.")
                 return None, None, None, None, None
         else:
             objects = None
@@ -857,14 +865,20 @@ class Delight(object):
             plt.savefig(os.path.join(self.imagefolder, f"{oid}_semimajor.pdf"))
             plt.show()
 
-        self.df.loc[oid, "hostsize"] = hostsize * self.pixscale
-        self.df.loc[oid, "hostsep"] = hostsep * self.pixscale
-        self.df.loc[oid, "mindistsize"] = mindistsize
+        if "hostsize" in locals():
+            self.df.loc[oid, "hostsize"] = hostsize * self.pixscale
+            self.df.loc[oid, "hostsep"] = hostsep * self.pixscale
+            self.df.loc[oid, "mindistsize"] = mindistsize
+            if doplot:
+                print(f"{oid} predicted host estimated semi-major axis: {self.df.loc[oid]['hostsize']} arcsec")
+                if self.df.loc[oid]["mindistsize"] > 0.05:
+                    print(f"   WARNING: center of SExtractor host position is further than 5% the semi-major axis from the predicted position (ratio:{self.df.loc[oid]['mindistsize']}).")
+        else:
+            print(f"   WARNING: Multi-resolution image of {oid} has no objects detected, cannot look for host size.")
+            self.df.loc[oid, "hostsize"] = np.nan
+            self.df.loc[oid, "hostsep"] = np.nan
+            self.df.loc[oid, "mindistsize"] = np.nan
 
-        if doplot:
-            print(f"{oid} predicted host estimated semi-major axis: {self.df.loc[oid]['hostsize']} arcsec")
-            if self.df.loc[oid]["mindistsize"] > 0.05:
-                print(f"WARNING: center of SExtractor host position is further than 5% the semi-major axis from the predicted position (ratio:{self.df.loc[oid]['mindistsize']}).")
 
     def preprocess(self):
 
@@ -882,7 +896,8 @@ class Delight(object):
         norm = np.max(self.X.reshape((self.X.shape[0], self.X.shape[1], self.X.shape[2] * self.X.shape[3])), axis=2)
         mask = np.isfinite(np.max(norm, axis=1)) & (np.max(norm, axis=1) > 0)
         if mask.shape[0] != mask.sum():
-            print("Warning, removing %i objects" % (mask.shape[0] - mask.sum()))
+            print("   WARNING: removing %i objects with non finite or only zero values in the multi-resolution images:" % (mask.shape[0] - mask.sum()))
+            print("   Please remove %s from your sample." % (", ".join(self.oids[np.invert(mask)])))
             self.oids = self.oids[mask]
             self.X = self.X[mask]
         
