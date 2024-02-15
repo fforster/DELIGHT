@@ -21,7 +21,7 @@ import sep
 from astropy.wcs import WCS
 from astropy.io import fits
 
-from mpl_toolkits.axes_grid.inset_locator import inset_axes
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from matplotlib import cm
 
 import tensorflow as tf
