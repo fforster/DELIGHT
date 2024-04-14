@@ -15,6 +15,9 @@ from matplotlib.patches import Ellipse
 from astropy.visualization import ZScaleInterval, ImageNormalize, MinMaxInterval, PercentileInterval, LogStretch, LinearStretch
 from astropy import units as u
 from astropy.coordinates import SkyCoord
+from astropy import wcs as astropy_wcs
+from astroquery.hips2fits import hips2fits
+import threading
 
 #import fitsio
 import sep
@@ -25,7 +28,7 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from matplotlib import cm
 
 import tensorflow as tf
-import panstamps # not really used here, but if we cannot import it is likely that it is not installed
+#import panstamps # not really used here, but if we cannot import it is likely that it is not installed
 
 class Delight(object):
 
@@ -97,26 +100,94 @@ class Delight(object):
                 ras.append(float(ra))
                 decs.append(float(dec))
                 matchedfiles.append(f)
-        dfpanstamps = pd.DataFrame({"filename": matchedfiles, "filters": filters, "panstamps_ra": ras, "panstamps_dec": decs})
-        self.panstamps_coords = SkyCoord(dfpanstamps.panstamps_ra.to_numpy(), dfpanstamps.panstamps_dec.to_numpy(), unit=(u.deg, u.deg))
+                print(f)
+        dfhostimage = pd.DataFrame({"filename": matchedfiles, "filters": filters, "hostimage_ra": ras, "hostimage_dec": decs})
+        self.hostimage_coords = SkyCoord(dfhostimage.hostimage_ra.to_numpy(), dfhostimage.hostimage_dec.to_numpy(), unit=(u.deg, u.deg))
 
         # find xmatches between requested SNe and available panstamp files
-        idx, d2d, d3d = self.sn_coords.match_to_catalog_sky(self.panstamps_coords)
+        idx, d2d, d3d = self.sn_coords.match_to_catalog_sky(self.hostimage_coords)
         self.df["dist"] = np.array([float(dist / u.arcsec) for dist in d2d])
-        self.df["filename"] = dfpanstamps.filename.to_numpy()[idx]
+        self.df["filename"] = dfhostimage.filename.to_numpy()[idx]
         self.df.loc[self.df.dist > 0.1, "filename"] = ""
 
         return True
-        
-    def download(self, width=2, overwrite=False):
+
+
+    # def download(self, width=2, overwrite=False):
+    # 
+    #     """Download missing data"""
+    # 
+    #     """
+    #     Parameters
+    #     ----------
+    #     width : integer
+    #        the width of the image in arcmin (default 2)
+    #     overwrite : bool
+    #        whether to overwrite the images
+    #     """
+    # 
+    #     check = self.check_missing()
+    #     if check:
+    #         print(f"Downloading {(self.df.dist > 0.1).sum()} missing files.")
+    # 
+    #     # download missing files
+    #     for idx, row in self.df.iterrows():
+    #         if "dist" in self.df:
+    #             if row.dist > 0.1 or overwrite:
+    #                 command = 'panstamps -f --width=%i --filter=r --downloadFolder=%s stack %s %s' % (width, self.downloadfolder, row.ra, row.dec)
+    #                 print(command)
+    #                 output = subprocess.check_output(command, shell=True)
+    #                 if len(output) == 0:
+    #                     print(f"   WARNING: object {idx} ({row.ra} {row.dec}) cannot be downloaded, probably outside PS1 footprint. Please remove {idx} from your sample.")
+    #         else:
+    #             command = 'panstamps -f --width=%i --filter=r --downloadFolder=%s stack %s %s' % (width, self.downloadfolder, row.ra, row.dec)
+    #             print(command)
+    #             output = subprocess.check_output(command, shell=True)
+    #             if len(output) == 0:
+    #                 print(f"   WARNING: object {idx} ({row.ra} {row.dec}) cannot be downloaded, probably outside PS1 footprint. Please remove {idx} from the sample.") 
+    #     self.check_missing()
+
+    def get_PS1_r(self, ra, dec):
+        w = astropy_wcs.WCS(header={
+        	'NAXIS': 2,
+        	'NAXIS1': 480,       
+        	'NAXIS2': 480,       
+        	'CTYPE1': 'RA---TAN',
+        	'CTYPE2': 'DEC--TAN',
+        	'CDELT1': 6.94444461259988E-05,
+        	'CDELT2': 6.94444461259988E-05,
+        	'CRPIX1': 240.0,
+        	'CRPIX2': 240.0,
+        	'CUNIT1': 'deg',
+        	'CUNIT2': 'deg',
+        	'CRVAL1': ra,
+        	'CRVAL2': dec,
+        	'PC1_1': -1.,
+        	'PC1_2': 0.,
+        	'PC2_1': 0.,
+        	'PC2_2': 1.
+        	})
+        hips = 'CDS/P/PanSTARRS/DR1/r'
+        result = hips2fits.query_with_wcs(
+            hips=hips,
+            wcs=w,
+            get_query_payload=False,
+            format='fits')
+
+        filename = "%s/stack_r_ra%.6f_dec%.6f_arcsec120.fits" % (self.downloadfolder, ra, dec)
+        if np.sum(np.isnan(result[0].data)) / np.shape(result[0].data)[0] / np.shape(result[0].data)[1] > 0.5:
+            print(f"WARNING: More than half of the pixels of {filename} are NaN values.")
+
+        result.writeto(filename, overwrite=True)
+        print(f"Downloaded {filename} using HiPS2Fits.")
+    
+    def download(self, overwrite=False):
 
         """Download missing data"""
 
         """
         Parameters
         ----------
-        width : integer
-           the width of the image in arcmin (default 2)
         overwrite : bool
            whether to overwrite the images
         """
@@ -125,21 +196,25 @@ class Delight(object):
         if check:
             print(f"Downloading {(self.df.dist > 0.1).sum()} missing files.")
 
+        nbatch = 10
+            
         # download missing files
+        counter = 0
         for idx, row in self.df.iterrows():
-            if "dist" in self.df:
-                if row.dist > 0.1 or overwrite:
-                    command = 'panstamps -f --width=%i --filter=r --downloadFolder=%s stack %s %s' % (width, self.downloadfolder, row.ra, row.dec)
-                    print(command)
-                    output = subprocess.check_output(command, shell=True)
-                    if len(output) == 0:
-                        print(f"   WARNING: object {idx} ({row.ra} {row.dec}) cannot be downloaded, probably outside PS1 footprint. Please remove {idx} from your sample.")
-            else:
-                command = 'panstamps -f --width=%i --filter=r --downloadFolder=%s stack %s %s' % (width, self.downloadfolder, row.ra, row.dec)
-                print(command)
-                output = subprocess.check_output(command, shell=True)
-                if len(output) == 0:
-                    print(f"   WARNING: object {idx} ({row.ra} {row.dec}) cannot be downloaded, probably outside PS1 footprint. Please remove {idx} from the sample.") 
+            if ("dist" not in self.df) or ("dist" in self.df and row.dist > 0.1) or overwrite:
+
+                if np.mod(counter, nbatch) == 0:
+                    threads = []
+                t = threading.Thread(target=self.get_PS1_r, args=[row.ra, row.dec])
+                t.start()
+                threads.append(t)
+
+                if np.mod(counter, nbatch) == nbatch - 1:
+                    for thread in threads:
+                        thread.join()
+
+                counter += 1
+
         self.check_missing()
 
         
