@@ -100,7 +100,6 @@ class Delight(object):
                 ras.append(float(ra))
                 decs.append(float(dec))
                 matchedfiles.append(f)
-                print(f)
         dfhostimage = pd.DataFrame({"filename": matchedfiles, "filters": filters, "hostimage_ra": ras, "hostimage_dec": decs})
         self.hostimage_coords = SkyCoord(dfhostimage.hostimage_ra.to_numpy(), dfhostimage.hostimage_dec.to_numpy(), unit=(u.deg, u.deg))
 
