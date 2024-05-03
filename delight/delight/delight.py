@@ -173,7 +173,7 @@ class Delight(object):
             get_query_payload=False,
             format='fits')
 
-        filename = "%s/stack_r_ra%.6f_dec%.6f_arcsec120.fits" % (self.downloadfolder, ra, dec)
+        filename = os.path.join(self.downloadfolder, "stack_r_ra%.6f_dec%.6f_arcsec120.fits" % (ra, dec))
         if np.sum(np.isnan(result[0].data)) / np.shape(result[0].data)[0] / np.shape(result[0].data)[1] > 0.5:
             print(f"WARNING: More than half of the pixels of {filename} are NaN values.")
 
