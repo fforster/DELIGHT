@@ -118,6 +118,14 @@ class Delight(object):
                 ras.append(float(ra))
                 decs.append(float(dec))
                 matchedfiles.append(f)
+        # the folder may hold files that are not PanSTARRS cutouts. Report
+        # nothing usable rather than letting the empty catalogue below fail
+        # inside match_to_catalog_sky.
+        if matchedfiles == []:
+            print(f"   WARNING: none of the {len(files)} files in "
+                  f"{self.downloadfolder} look like PanSTARRS cutouts.")
+            return False
+
         dfhostimage = pd.DataFrame({"filename": matchedfiles, "filters": filters, "hostimage_ra": ras, "hostimage_dec": decs})
         self.hostimage_coords = SkyCoord(dfhostimage.hostimage_ra.to_numpy(), dfhostimage.hostimage_dec.to_numpy(), unit=(u.deg, u.deg))
 
@@ -248,6 +256,24 @@ class Delight(object):
         None
         """
         
+        # Fail early, and say why. Without this a missing "filename" column
+        # surfaces as an AttributeError on row.filename, and an empty filename
+        # as an IsADirectoryError, both raised from inside a dataframe apply
+        # several calls away from the actual problem: no images on disk.
+        if "filename" not in self.df:
+            raise ValueError(
+                f"No usable image files in {self.downloadfolder}. Call download() "
+                "first, or point datadir at a directory whose fits subdirectory "
+                "already holds them.")
+
+        missing = [str(oid) for oid in self.df.index[self.df.filename == ""]]
+        if missing:
+            shown = ", ".join(missing[:5]) + (", ..." if len(missing) > 5 else "")
+            raise ValueError(
+                "No image file for %i of %i objects (%s). Call download() to "
+                "fetch them, or remove them from your sample."
+                % (len(missing), len(self.df), shown))
+
         # get wcs
         print("Loading WCS information")
         with warnings.catch_warnings():
