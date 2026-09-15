@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*~
+
+build/
+dist/
+*.egg-info/
+
+.venv*/
+.ipynb_checkpoints/
+
+# pipeline outputs
+artifacts/
+data/fits
+data/images/
+data/*.pkl
+
+# scratch notebooks
+Untitled*.ipynb

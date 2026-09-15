@@ -23,10 +23,10 @@ If you cannot install some of the dependencies, e.g. tensorflow, you can try run
 *Methods* (most important):
 
 * **init**: class constructor, it requires a list of object identifiers, a list of right ascensions, and a list of declinations
-* **download**: downloads [PanSTARRS](https://outerspace.stsci.edu/display/PANSTARRS/) fits files using the [panstamps](https://panstamps.readthedocs.io/en/master/) servive.
+* **download**: downloads [PanSTARRS](https://outerspace.stsci.edu/display/PANSTARRS/) fits files using the [HiPS2fits](https://astroquery.readthedocs.io/en/latest/hips2fits/hips2fits.html) service.
 * **get_pix_coords**: gets the WCS solution in the fits files to move from pixel to celestial coordinates.  
 * **compute_multiresolution**: transform the [PanSTARRS](https://outerspace.stsci.edu/display/PANSTARRS/) images to multi-resolution images
-* **load_model**: load DELIGHT's [Tensorflow](https://www.tensorflow.org/) model
+* **load_model**: load DELIGHT's [Keras](https://keras.io/) model
 * **predict**: predict the host positions
 * **plot_host**: plot the original host image, the multi-resolution images, and the transient and predicted host position
 * **get_hostsize**: estimate the host semi-major axis
@@ -35,10 +35,25 @@ If you cannot install some of the dependencies, e.g. tensorflow, you can try run
 
 *Requirements*:
 
+* Python >= 3.10
+* tensorflow >= 2.16, which provides Keras 3 (https://www.tensorflow.org/install/pip, `pip install tensorflow`)
+* numpy, pandas, scipy, matplotlib >= 3.9
 * xarray (`python -m pip install xarray`)
 * astropy (`pip install astropy`)
+* astroquery (`pip install astroquery`)
 * sep (`pip install sep`)
-* tensorflow (https://www.tensorflow.org/install/pip, `pip install tensorflow`)
+
+All of these are installed automatically by `pip install astro-delight`.
+
+*A note on the model file*: versions up to 0.0.11 shipped `DELIGHT_v1.h5`, a
+Keras 2 model file. Keras 3, which every TensorFlow from 2.16 onwards uses,
+cannot read it, because it stores the network's rotations and flips as
+`TFOpLambda` layers that no longer exist. From 0.1.0 the architecture is defined
+in code (`delight/delight/model.py`) and the trained weights ship separately as
+`DELIGHT_v1.weights.h5`. The weights are unchanged, and the predictions are the
+same to within floating point noise; `tests/` checks this against a reference
+run of the old version. The original `.h5` is kept in the repository for
+provenance, and `tools/convert_model.py` regenerates the weights from it.
 
 --- 
 **DELIGHT's multi-resolution images and prediction vector:**

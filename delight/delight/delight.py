@@ -3,7 +3,7 @@ import re
 import subprocess
 import numpy as np
 import pandas as pd
-import pkg_resources
+import importlib.resources
 
 import warnings
 
@@ -24,11 +24,29 @@ import sep
 from astropy.wcs import WCS
 from astropy.io import fits
 
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-from matplotlib import cm
+import matplotlib
 
-import tensorflow as tf
-#import panstamps # not really used here, but if we cannot import it is likely that it is not installed
+import keras
+
+from .model import build_delight_model, load_delight_model, NLEVELS, VARIANTS
+
+
+def native(data):
+
+    """return an array in the machine's native byte order
+
+    FITS files are big-endian, while sep requires native byte order. The old
+    idiom for this was data.byteswap().newbyteorder(), but ndarray.newbyteorder
+    was removed in NumPy 2.0; dtype.newbyteorder still exists.
+
+    Parameters
+    ----------
+    data : numpy array
+       array to convert, typically read straight from a fits file
+    """
+
+    return data.astype(data.dtype.newbyteorder("="), copy=False)
+
 
 class Delight(object):
 
@@ -100,6 +118,14 @@ class Delight(object):
                 ras.append(float(ra))
                 decs.append(float(dec))
                 matchedfiles.append(f)
+        # the folder may hold files that are not PanSTARRS cutouts. Report
+        # nothing usable rather than letting the empty catalogue below fail
+        # inside match_to_catalog_sky.
+        if matchedfiles == []:
+            print(f"   WARNING: none of the {len(files)} files in "
+                  f"{self.downloadfolder} look like PanSTARRS cutouts.")
+            return False
+
         dfhostimage = pd.DataFrame({"filename": matchedfiles, "filters": filters, "hostimage_ra": ras, "hostimage_dec": decs})
         self.hostimage_coords = SkyCoord(dfhostimage.hostimage_ra.to_numpy(), dfhostimage.hostimage_dec.to_numpy(), unit=(u.deg, u.deg))
 
@@ -197,22 +223,24 @@ class Delight(object):
 
         nbatch = 10
             
-        # download missing files
-        counter = 0
+        # download missing files, nbatch at a time
+        threads = []
         for idx, row in self.df.iterrows():
             if ("dist" not in self.df) or ("dist" in self.df and row.dist > 0.1) or overwrite:
 
-                if np.mod(counter, nbatch) == 0:
-                    threads = []
                 t = threading.Thread(target=self.get_PS1_r, args=[row.ra, row.dec])
                 t.start()
                 threads.append(t)
 
-                if np.mod(counter, nbatch) == nbatch - 1:
+                if len(threads) == nbatch:
                     for thread in threads:
                         thread.join()
+                    threads = []
 
-                counter += 1
+        # wait for the last, possibly incomplete, batch. Without this the
+        # check_missing() below runs while downloads are still in flight.
+        for thread in threads:
+            thread.join()
 
         self.check_missing()
 
@@ -228,6 +256,24 @@ class Delight(object):
         None
         """
         
+        # Fail early, and say why. Without this a missing "filename" column
+        # surfaces as an AttributeError on row.filename, and an empty filename
+        # as an IsADirectoryError, both raised from inside a dataframe apply
+        # several calls away from the actual problem: no images on disk.
+        if "filename" not in self.df:
+            raise ValueError(
+                f"No usable image files in {self.downloadfolder}. Call download() "
+                "first, or point datadir at a directory whose fits subdirectory "
+                "already holds them.")
+
+        missing = [str(oid) for oid in self.df.index[self.df.filename == ""]]
+        if missing:
+            shown = ", ".join(missing[:5]) + (", ..." if len(missing) > 5 else "")
+            raise ValueError(
+                "No image file for %i of %i objects (%s). Call download() to "
+                "fetch them, or remove them from your sample."
+                % (len(missing), len(self.df), shown))
+
         # get wcs
         print("Loading WCS information")
         with warnings.catch_warnings():
@@ -317,7 +363,16 @@ class Delight(object):
             fig, ax = plt.subplots()
             
         image_masked = np.ma.masked_where((image <= 0), image)
-        norm = ImageNormalize(image_masked[image_masked > 0], interval=ZScaleInterval(), vmin=np.min(image_masked), vmax= np.percentile(image_masked, 99))
+
+        # the stretch is set by the visible pixels. np.percentile cannot be
+        # given the masked array itself: it ignores the mask and raises
+        # "output array is read-only" on the intermediate it builds.
+        visible = image_masked.compressed()
+        if visible.size == 0:
+            visible = np.asarray(image).ravel()
+
+        norm = ImageNormalize(visible, interval=ZScaleInterval(),
+                              vmin=visible.min(), vmax=np.percentile(visible, 99))
         im = ax.imshow(image_masked, interpolation='nearest', cmap='viridis', origin='lower', norm=norm)
     
         # plot an ellipse for each object
@@ -373,7 +428,7 @@ class Delight(object):
             return
         
         #data = fitsio.read(filename)
-        data = fits.open(filename)[0].data.byteswap().newbyteorder()
+        data = native(fits.open(filename)[0].data)
         data = np.nan_to_num(data, 0)
         data = data# * 1.0
         if (np.sum(data == 0) == data.shape[0] * data.shape[1]):
@@ -590,7 +645,7 @@ class Delight(object):
         
         # read data
         #data = fitsio.read(os.path.join(self.downloadfolder, filename))
-        data = fits.open(os.path.join(self.downloadfolder, filename))[0].data.byteswap().newbyteorder()
+        data = native(fits.open(os.path.join(self.downloadfolder, filename))[0].data)
         data = np.nan_to_num(data, 0)
         data = data# * 1.0
     
@@ -641,7 +696,7 @@ class Delight(object):
            object identifier
         """
         
-        cmap = cm.get_cmap('viridis_r')
+        cmap = matplotlib.colormaps['viridis_r']
 
         idx_host = self.df.index.get_loc(oid)
         dxpred = self.df.loc[oid].dx_delight
@@ -886,7 +941,7 @@ class Delight(object):
                     ax[self.nlevels-i].text(0, 460, "Original", c='k', fontsize=35, va='top')
                     ax[self.nlevels-i].scatter([xhost], [yhost], c='r', s=50, zorder=10000)
                 image = fits.open(os.path.join(self.downloadfolder, self.df.loc[oid].filename))[0].data
-                image = image.byteswap().newbyteorder()
+                image = native(image)
             else:
                 image = self.X[idx_host, i, :, :]
                 unmaskedimage = np.stack(unmaskeddata.data.values)[0, i]
@@ -991,24 +1046,37 @@ class Delight(object):
     
     def load_model(self, modelversion='v1', modelfile=None):
 
-        """load tensorflow model"""
+        """load the DELIGHT neural network"""
 
         """
         Parameters
         ----------
         modelversion : string
-           optional suffix of tensorflow model, default is v1
+           optional suffix of the model, default is v1
         modelfile : string
            optional filename, use custom model file, it has priority over the previous modelversion string
         """
 
         if modelfile is None:
-            self.modelfile = pkg_resources.resource_filename(__name__, f'DELIGHT_{modelversion}.h5')
+            # the bundled weights, alongside this module inside the package
+            resource = importlib.resources.files(__package__) / f'DELIGHT_{modelversion}.weights.h5'
+            with importlib.resources.as_file(resource) as path:
+                self.modelfile = str(path)
         else:
             self.modelfile = modelfile
 
-        self.tfmodel = tf.keras.models.load_model(self.modelfile)
-    
+        if str(self.modelfile).endswith(".weights.h5"):
+            # architecture from delight.model, weights from the file
+            self.tfmodel = load_delight_model(self.modelfile)
+        elif str(self.modelfile).endswith(".h5"):
+            raise ValueError(
+                f"{self.modelfile} looks like a legacy Keras 2 model. Keras 3 cannot "
+                "read these, because they store rotations and flips as TFOpLambda "
+                "layers. Convert it with tools/convert_model.py, or pass the bundled "
+                "DELIGHT_v1.weights.h5 instead.")
+        else:
+            self.tfmodel = keras.saving.load_model(self.modelfile)
+
 
     def derotate(self, y_pred, reg=False):
 
@@ -1056,7 +1124,13 @@ class Delight(object):
         """
 
         
-        y_pred = self.tfmodel.predict([self.Xpr[:, :, :, i] for i in range(self.Xpr.shape[3])])
+        # Keras 3 does not expand a missing channel axis, so add it explicitly
+        y_pred = self.tfmodel.predict(
+            [self.Xpr[:, :, :, i][..., np.newaxis].astype("float32")
+             for i in range(self.Xpr.shape[3])], verbose=0)
+
+        # keep the raw network output around, before the rotations are undone
+        self.y_pred_raw = y_pred
 
         y_pred = self.derotate(y_pred)
 
@@ -1066,7 +1140,7 @@ class Delight(object):
         y_pred_std = np.sqrt((((y_pred - y_pred_mean[:, np.newaxis, :])**2).sum(axis=2)).mean(axis=1))
 
         
-        self.df["dxdy_delight_rotflip"] = [ys for ys in y_pred] 
+        self.df["dxdy_delight_rotflip"] = pd.Series(list(y_pred), index=self.df.index, dtype=object)
         self.df["dx_delight"] = y_pred_mean[:, 0]
         self.df["dy_delight"] = y_pred_mean[:, 1]
         self.df["std_delight"] = y_pred_std
