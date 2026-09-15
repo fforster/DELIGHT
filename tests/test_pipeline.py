@@ -62,9 +62,13 @@ DATADIR = os.path.join(ROOT, "data")
 
 
 @pytest.fixture(scope="module")
-def pipeline():
+def pipeline_client():
 
-    """run the current code over the test sample, offline"""
+    """run the current code over the test sample, offline
+
+    Returns the Delight object itself, so tests that need its methods rather
+    than just its numbers can use it.
+    """
 
     fitsdir = os.path.join(DATADIR, "fits")
     if not os.path.isdir(fitsdir) or not os.listdir(fitsdir):
@@ -97,7 +101,15 @@ def pipeline():
     for name, _, _, _ in TOLERANCES:
         if name not in results and name in client.df:
             results[name] = client.df[name].to_numpy(dtype="float64")
-    return results
+    return client, results
+
+
+@pytest.fixture(scope="module")
+def pipeline(pipeline_client):
+
+    """the numbers produced by that run"""
+
+    return pipeline_client[1]
 
 
 def test_same_objects(pipeline, baseline):
@@ -138,7 +150,15 @@ def test_matches_saved_dataframe(pipeline):
     if not os.path.exists(pkl):
         pytest.skip("no saved dataframe to compare against")
 
-    df = pd.read_pickle(pkl)
+    try:
+        df = pd.read_pickle(pkl)
+    except AttributeError as error:
+        # The dataframe stores astropy WCS and SkyCoord objects in its cells, and
+        # a pickle written by one astropy major version cannot always be read by
+        # another. That is astropy's pickle format, not something this package
+        # controls, so skip rather than fail; save() and load() round-tripping on
+        # a single stack is what matters and is covered elsewhere.
+        pytest.skip("saved dataframe was written by a different astropy: %s" % error)
 
     # reuse the per-quantity bands rather than one number for all of them:
     # these columns are a mix of pixels and degrees, and a pixel tolerance
@@ -150,3 +170,38 @@ def test_matches_saved_dataframe(pipeline):
         stored = df.loc[list(pipeline["oids"]), name].to_numpy(dtype="float64")
         diff = np.abs(stored - pipeline[name]).max()
         assert diff <= tol, "%s: max abs diff %.3e > %.1e %s" % (name, diff, tol, unit)
+
+
+def test_save_load_round_trip(pipeline_client, tmp_path):
+
+    """save() then load() returns the same numbers on one stack
+
+    The dataframe holds astropy WCS and SkyCoord objects and (8, 2) arrays in
+    object columns, so this is really a check that pandas 3 pickles and restores
+    those cells intact. Writing goes to a temporary directory rather than the
+    repository's data directory.
+    """
+
+    client, results = pipeline_client
+
+    original_datadir = client.datadir
+    original_df = client.df.copy()
+    try:
+        client.datadir = str(tmp_path)
+        client.save()
+
+        client.df = pd.DataFrame()      # prove load() really repopulates it
+        client.load()
+
+        for name in ("dx_delight", "dy_delight", "std_delight",
+                     "ra_delight", "dec_delight", "hostsize"):
+            restored = client.df.loc[list(results["oids"]), name].to_numpy(dtype="float64")
+            assert np.array_equal(restored, results[name]), name
+
+        # the object columns, which are the ones pickling could quietly mangle
+        rotflip = np.stack(client.df["dxdy_delight_rotflip"].to_numpy()).astype("float64")
+        assert np.array_equal(rotflip, results["dxdy_rotflip"])
+        assert client.df.wcs.iloc[0].pixel_to_world(0, 0) is not None
+    finally:
+        client.datadir = original_datadir
+        client.df = original_df

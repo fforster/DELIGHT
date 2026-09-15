@@ -49,9 +49,15 @@ test = ["pytest>=7"]
 include = ["delight*"]
 
 [tool.setuptools.package-data]
-# the trained network. The Keras 2 DELIGHT_v1.h5 is kept in the repository for
-# provenance but is no longer shipped: Keras 3 cannot read it.
-"delight.delight" = ["*.weights.h5", "*.keras"]
+# Only the weights. The architecture lives in delight/delight/model.py, so this
+# is all load_model() needs, and it keeps the wheel near the size of the 0.0.11
+# release rather than doubling it.
+#
+# Two other model files stay in the repository but are deliberately not shipped:
+# DELIGHT_v1.keras, a whole-model file that is only useful to someone passing
+# modelfile= explicitly, and DELIGHT_v1.h5, the Keras 2 original, which Keras 3
+# cannot read at all. tools/convert_model.py regenerates both from the original.
+"delight.delight" = ["*.weights.h5"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
