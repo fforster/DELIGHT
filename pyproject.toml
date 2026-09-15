@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "astro-delight"
+version = "0.1.0"
+description = "Deep Learning Identification of Galaxy Hosts in Transients, a package to automatically identify host galaxies of transient candidates"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GNU GPLv3" }
+authors = [{ name = "Francisco Förster", email = "francisco.forster@gmail.com" }]
+dependencies = [
+    "numpy>=1.26",
+    # pandas was imported but never declared before 0.1.0
+    "pandas>=2.0",
+    # 3.9 removed matplotlib.cm.get_cmap, which the plotting code used
+    "matplotlib>=3.9",
+    "xarray>=2023.1",
+    "astropy>=5.3",
+    # astropy needs scipy for SkyCoord.match_to_catalog_sky
+    "scipy>=1.10",
+    "astroquery>=0.4.7",
+    "sep>=1.4",
+    # Keras 3, which is what tensorflow>=2.16 provides
+    "keras>=3.5",
+    "tensorflow>=2.16",
+    "h5py>=3.8",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.urls]
+Homepage = "https://github.com/fforster/DELIGHT"
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+include = ["delight*"]
+
+[tool.setuptools.package-data]
+# the trained network. The Keras 2 DELIGHT_v1.h5 is kept in the repository for
+# provenance but is no longer shipped: Keras 3 cannot read it.
+"delight.delight" = ["*.weights.h5", "*.keras"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not network'"
+markers = ["network: test requires internet access (deselected by default)"]
