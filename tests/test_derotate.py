@@ -15,11 +15,12 @@ import numpy as np
 
 NVARIANTS = 8
 
-# the eight derotated predictions of one object typically scatter by ~2 pixels,
-# while a wrong ordering scatters them by more than ten
-MAX_SPREAD = 8.0
-MAX_MEAN_SPREAD = 4.0
-MIN_PERMUTED_SPREAD = 8.0
+# All three are in pixels on the 480x480 PanSTARRS cutout, which is 0.25 arcsec
+# per pixel. The eight derotated predictions of one object typically scatter by
+# ~2 px, while a wrong ordering scatters them by more than ten.
+MAX_SPREAD = 8.0            # px, worst single object
+MAX_MEAN_SPREAD = 4.0       # px, averaged over the sample
+MIN_PERMUTED_SPREAD = 8.0   # px, a permuted ordering must exceed this
 
 
 def spread(dxdy):
@@ -48,6 +49,7 @@ def test_derotate_reproduces_golden(baseline):
 
     client = Delight.__new__(Delight)     # derotate needs no instance state
     got = client.derotate(baseline["y_raw"])
+    # atol in pixels; this is a pure sign and axis swap, so it is exact
     assert np.allclose(got, baseline["dxdy_rotflip"], atol=1e-9)
 
 

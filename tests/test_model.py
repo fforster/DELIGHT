@@ -19,6 +19,12 @@ EXPECTED_PARAMS = 2297184
 NLEVELS = 5
 NVARIANTS = 8
 
+# Both tolerances are absolute and in pixels on the 480x480 PanSTARRS cutout
+# (0.25 arcsec per pixel), because the network predicts host offsets in those
+# pixels. 1e-4 px is 25 microarcsec.
+ORACLE_TOL = 1e-3   # px, Keras float32 against the float64 numpy reference
+LEGACY_TOL = 1e-4   # px, Keras 3 against the original Keras 2 model
+
 
 @pytest.fixture(scope="module")
 def model_module():
@@ -106,13 +112,15 @@ def test_matches_numpy_reference(delight_model, Xpr_golden, legacy_h5):
     got = model_predict(delight_model, Xpr_golden).astype("float64")
 
     assert got.shape == oracle.shape
-    # float32 Keras against float64 NumPy; a mis-ordered variant would be O(1)
-    assert np.abs(got - oracle).max() < 1e-3
+    # ORACLE_TOL is in pixels, like everything the network emits. float32 Keras
+    # against float64 NumPy, so the band is loose; a mis-ordered variant would
+    # be O(1) px, four orders of magnitude away
+    assert np.abs(got - oracle).max() < ORACLE_TOL
 
     # and per variant, so a failure names the one that is wrong
     for variant in range(NVARIANTS):
         columns = slice(2 * variant, 2 * variant + 2)
-        assert np.abs(got[:, columns] - oracle[:, columns]).max() < 1e-3
+        assert np.abs(got[:, columns] - oracle[:, columns]).max() < ORACLE_TOL
 
 
 def test_matches_legacy_keras2_output(delight_model, Xpr_golden, y_raw_legacy):
@@ -130,7 +138,7 @@ def test_matches_legacy_keras2_output(delight_model, Xpr_golden, y_raw_legacy):
     diff = np.abs(got - y_raw_legacy)
     # identical float32 weights and identical operations: the only slack is
     # accumulation order between TensorFlow versions
-    assert diff.max() < 1e-4, "max abs diff %.3e" % diff.max()
+    assert diff.max() < LEGACY_TOL, "max abs diff %.3e px" % diff.max()
 
 
 def test_weights_file_round_trips(delight_model, weights_file, model_module, Xpr_golden):

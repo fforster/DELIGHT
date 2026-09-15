@@ -13,20 +13,38 @@ import sys
 
 import numpy as np
 
-# stage, quantity, tolerance.  The bands differ by stage on purpose:
-# the network is expected to agree to float32 noise, while the sep- and
-# WCS-derived quantities may move slightly with their library versions.
+# stage, then (quantity, tolerance, unit) for each of its quantities.
+#
+# Tolerances are absolute, applied to the maximum absolute difference, and each
+# one is in the unit of its own quantity -- they are not comparable across
+# stages.  The images are PanSTARRS cutouts at 0.25 arcsec per pixel
+# (Delight.pixscale), so 1e-3 px is 0.25 mas, 1e-4 px is 25 uas, 1e-7 deg is
+# 0.36 mas and 1e-3 arcsec is 1 mas.
+#
+# The bands differ by stage on purpose: the network is expected to agree to
+# float32 noise, while the sep- and WCS-derived quantities may move slightly
+# with their library versions.
 STAGES = [
-    ("preprocessing", [("X", 0.0), ("Xpr", 0.0)]),
-    ("source extraction", [("xSN", 1e-3), ("ySN", 1e-3),
-                           ("dx_sex", 1e-3), ("dy_sex", 1e-3)]),
-    ("neural network", [("y_raw", 1e-4), ("dxdy_rotflip", 1e-4),
-                        ("dx_delight", 1e-4), ("dy_delight", 1e-4),
-                        ("std_delight", 1e-4)]),
-    ("coordinates", [("ra_delight", 1e-7), ("dec_delight", 1e-7),
-                     ("ra_sex", 1e-7), ("dec_sex", 1e-7)]),
-    ("host size", [("hostsize", 1e-3), ("hostsep", 1e-3),
-                   ("mindistsize", 1e-3)]),
+    # min-max normalised intensity in [0, 1], so dimensionless. Compared
+    # exactly: these stages are pure numpy and xarray and should not move at all
+    ("preprocessing", [("X", 0.0, ""),
+                       ("Xpr", 0.0, "")]),
+    # pixel coordinates and offsets on the 480x480 cutout
+    ("source extraction", [("xSN", 1e-3, "px"), ("ySN", 1e-3, "px"),
+                           ("dx_sex", 1e-3, "px"), ("dy_sex", 1e-3, "px")]),
+    # the network predicts offsets in cutout pixels: dx_delight is added to
+    # xSN before wcs.pixel_to_world. std_delight is an rms over those offsets
+    ("neural network", [("y_raw", 1e-4, "px"), ("dxdy_rotflip", 1e-4, "px"),
+                        ("dx_delight", 1e-4, "px"), ("dy_delight", 1e-4, "px"),
+                        ("std_delight", 1e-4, "px")]),
+    ("coordinates", [("ra_delight", 1e-7, "deg"), ("dec_delight", 1e-7, "deg"),
+                     ("ra_sex", 1e-7, "deg"), ("dec_sex", 1e-7, "deg")]),
+    # get_hostsize multiplies both of these by pixscale before storing them
+    ("host size", [("hostsize", 1e-3, "arcsec"),
+                   ("hostsep", 1e-3, "arcsec")]),
+    # separation divided by semi-major axis: a ratio, not an angle, so it is
+    # kept out of the arcsec group above rather than implying a unit it lacks
+    ("host size ratio", [("mindistsize", 1e-3, "")]),
 ]
 
 
@@ -45,13 +63,13 @@ def main():
         raise SystemExit("the two runs cover different objects")
     print("comparing %i objects\n" % len(oids))
 
-    print("%-18s %-16s %12s %12s  %s" % ("stage", "quantity", "max abs diff",
-                                         "tolerance", "worst object"))
-    print("-" * 78)
+    print("%-18s %-16s %12s %12s %-7s %s" % ("stage", "quantity", "max abs diff",
+                                             "tolerance", "unit", "worst object"))
+    print("-" * 86)
 
     failures = []
     for stage, quantities in STAGES:
-        for name, tol in quantities:
+        for name, tol, unit in quantities:
             if name not in old.files or name not in new.files:
                 print("%-18s %-16s %12s" % (stage, name, "MISSING"))
                 continue
@@ -68,9 +86,10 @@ def main():
 
             status = "" if maxdiff <= tol else "   <-- EXCEEDS TOLERANCE"
             if maxdiff > tol:
-                failures.append("%s: max abs diff %.3e > %.1e" % (name, maxdiff, tol))
-            print("%-18s %-16s %12.3e %12.1e  %s%s"
-                  % (stage, name, maxdiff, tol, oids[worst], status))
+                failures.append("%s: max abs diff %.3e > %.1e %s"
+                                % (name, maxdiff, tol, unit or "(dimensionless)"))
+            print("%-18s %-16s %12.3e %12.1e %-7s %s%s"
+                  % (stage, name, maxdiff, tol, unit or "-", oids[worst], status))
         print()
 
     if failures:

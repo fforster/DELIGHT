@@ -18,28 +18,44 @@ import pytest
 
 from conftest import ROOT
 
-# quantity -> (stage, tolerance).  The bands differ by stage on purpose: the
-# network should agree to float32 noise, while sep- and WCS-derived quantities
-# are allowed to move slightly with their library versions.
+# quantity -> (stage, tolerance, unit).
+#
+# Tolerances are absolute, applied to the maximum absolute difference, and each
+# is in the unit of its own quantity -- they are not comparable across stages.
+# The images are PanSTARRS cutouts at 0.25 arcsec per pixel (Delight.pixscale),
+# so 1e-3 px is 0.25 mas, 1e-4 px is 25 uas, 1e-7 deg is 0.36 mas and
+# 1e-3 arcsec is 1 mas.
+#
+# The bands differ by stage on purpose: the network should agree to float32
+# noise, while sep- and WCS-derived quantities are allowed to move slightly
+# with their library versions.
 TOLERANCES = [
-    ("X", "preprocessing", 0.0),
-    ("Xpr", "preprocessing", 0.0),
-    ("xSN", "source extraction", 1e-3),
-    ("ySN", "source extraction", 1e-3),
-    ("dx_sex", "source extraction", 1e-3),
-    ("dy_sex", "source extraction", 1e-3),
-    ("y_raw", "neural network", 1e-4),
-    ("dxdy_rotflip", "neural network", 1e-4),
-    ("dx_delight", "neural network", 1e-4),
-    ("dy_delight", "neural network", 1e-4),
-    ("std_delight", "neural network", 1e-4),
-    ("ra_delight", "coordinates", 1e-7),
-    ("dec_delight", "coordinates", 1e-7),
-    ("ra_sex", "coordinates", 1e-7),
-    ("dec_sex", "coordinates", 1e-7),
-    ("hostsize", "host size", 1e-3),
-    ("hostsep", "host size", 1e-3),
-    ("mindistsize", "host size", 1e-3),
+    # min-max normalised intensity in [0, 1], so dimensionless, and compared
+    # exactly: these stages are pure numpy and xarray and should not move at all
+    ("X", "preprocessing", 0.0, ""),
+    ("Xpr", "preprocessing", 0.0, ""),
+    # pixel coordinates and offsets on the 480x480 cutout
+    ("xSN", "source extraction", 1e-3, "px"),
+    ("ySN", "source extraction", 1e-3, "px"),
+    ("dx_sex", "source extraction", 1e-3, "px"),
+    ("dy_sex", "source extraction", 1e-3, "px"),
+    # the network predicts offsets in cutout pixels: dx_delight is added to xSN
+    # before wcs.pixel_to_world. std_delight is an rms over those offsets
+    ("y_raw", "neural network", 1e-4, "px"),
+    ("dxdy_rotflip", "neural network", 1e-4, "px"),
+    ("dx_delight", "neural network", 1e-4, "px"),
+    ("dy_delight", "neural network", 1e-4, "px"),
+    ("std_delight", "neural network", 1e-4, "px"),
+    ("ra_delight", "coordinates", 1e-7, "deg"),
+    ("dec_delight", "coordinates", 1e-7, "deg"),
+    ("ra_sex", "coordinates", 1e-7, "deg"),
+    ("dec_sex", "coordinates", 1e-7, "deg"),
+    # get_hostsize multiplies both of these by pixscale before storing them
+    ("hostsize", "host size", 1e-3, "arcsec"),
+    ("hostsep", "host size", 1e-3, "arcsec"),
+    # separation divided by semi-major axis: a ratio, not an angle, so it is
+    # kept out of the arcsec group above rather than implying a unit it lacks
+    ("mindistsize", "host size ratio", 1e-3, ""),
 ]
 
 DATADIR = os.path.join(ROOT, "data")
@@ -78,7 +94,7 @@ def pipeline():
                "y_raw": np.asarray(client.y_pred_raw, dtype="float64"),
                "dxdy_rotflip": np.stack(
                    client.df["dxdy_delight_rotflip"].to_numpy()).astype("float64")}
-    for name, _, _ in TOLERANCES:
+    for name, _, _, _ in TOLERANCES:
         if name not in results and name in client.df:
             results[name] = client.df[name].to_numpy(dtype="float64")
     return results
@@ -88,9 +104,9 @@ def test_same_objects(pipeline, baseline):
     assert np.array_equal(pipeline["oids"], baseline["oids"])
 
 
-@pytest.mark.parametrize("name,stage,tol", TOLERANCES,
+@pytest.mark.parametrize("name,stage,tol,unit", TOLERANCES,
                          ids=[t[0] for t in TOLERANCES])
-def test_matches_baseline(pipeline, baseline, name, stage, tol):
+def test_matches_baseline(pipeline, baseline, name, stage, tol, unit):
 
     """one quantity, against the pre-migration reference"""
 
@@ -106,8 +122,8 @@ def test_matches_baseline(pipeline, baseline, name, stage, tol):
     worst = pipeline["oids"][int(np.argmax(
         diff.reshape(diff.shape[0], -1).max(axis=1) if diff.ndim > 1 else diff))]
     assert diff.max() <= tol, \
-        "%s (%s): max abs diff %.3e > %.1e, worst on %s" % (
-            name, stage, diff.max(), tol, worst)
+        "%s (%s): max abs diff %.3e > %.1e %s, worst on %s" % (
+            name, stage, diff.max(), tol, unit or "(dimensionless)", worst)
 
 
 def test_matches_saved_dataframe(pipeline):
@@ -123,6 +139,14 @@ def test_matches_saved_dataframe(pipeline):
         pytest.skip("no saved dataframe to compare against")
 
     df = pd.read_pickle(pkl)
+
+    # reuse the per-quantity bands rather than one number for all of them:
+    # these columns are a mix of pixels and degrees, and a pixel tolerance
+    # applied to a right ascension would be looser than a whole pixel
+    bands = {name: (tol, unit) for name, _, tol, unit in TOLERANCES}
+
     for name in ("dx_delight", "dy_delight", "std_delight", "ra_delight", "dec_delight"):
+        tol, unit = bands[name]
         stored = df.loc[list(pipeline["oids"]), name].to_numpy(dtype="float64")
-        assert np.abs(stored - pipeline[name]).max() < 1e-4, name
+        diff = np.abs(stored - pipeline[name]).max()
+        assert diff <= tol, "%s: max abs diff %.3e > %.1e %s" % (name, diff, tol, unit)
