@@ -11,7 +11,7 @@ dist/
 
 # pipeline outputs
 artifacts/
-data/fits/
+data/fits
 data/images/
 data/*.pkl
 
